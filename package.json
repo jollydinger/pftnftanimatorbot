@@ -1,0 +1,24 @@
+{
+  "name": "pft-nft-animation-bot",
+  "version": "1.0.0",
+  "description": "PFT NFT Animator bot — animates NFT images via fal.ai Kling Pro",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "stop": "wmic process where \"name='node.exe' and commandline like '%pftnft%'\" delete",
+    "dev": "tsx watch src/index.ts"
+  },
+  "dependencies": {
+    "@fal-ai/client": "^1.4.0",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "dotenv": "^16.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  }
+}

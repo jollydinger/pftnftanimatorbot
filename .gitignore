@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+state.json
+cursor.json
+seen_txs.json
+.keystone-api-key
+*.log
