@@ -4,6 +4,7 @@ import { ConversationState, ConversationStatus } from './types.js';
 
 const STATE_FILE = path.join(process.cwd(), 'state.json');
 const CURSOR_FILE = path.join(process.cwd(), 'cursor.json');
+const PROCESSED_TXS_FILE = path.join(process.cwd(), 'processed_txs.json');
 
 // ── Conversation state ─────────────────────────────────────────────────────────
 
@@ -58,5 +59,22 @@ export function loadCursor(): number | undefined {
 
 export function saveCursor(cursor: number): void {
   fs.writeFileSync(CURSOR_FILE, JSON.stringify({ cursor }));
+}
+
+// ── Processed tx hashes (persisted dedup across restarts) ─────────────────────
+
+export function loadProcessedTxHashes(): Set<string> {
+  if (!fs.existsSync(PROCESSED_TXS_FILE)) return new Set();
+  try {
+    const data = JSON.parse(fs.readFileSync(PROCESSED_TXS_FILE, 'utf-8'));
+    return new Set(Array.isArray(data) ? data : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function markTxProcessed(txHash: string, set: Set<string>): void {
+  set.add(txHash);
+  fs.writeFileSync(PROCESSED_TXS_FILE, JSON.stringify([...set]));
 }
 

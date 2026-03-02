@@ -2,19 +2,19 @@ import 'dotenv/config';
 import { initPFTClient, scanMessages, getMessage, sendMessage, uploadContent, registerBot } from './pftClient.js';
 import { generateAnimationPrompt } from './visionService.js';
 import { animateNFT, downloadVideo, initFal } from './animationService.js';
-import { getState, setState, loadCursor, saveCursor, resetStuckProcessing } from './conversationState.js';
+import { getState, setState, loadCursor, saveCursor, resetStuckProcessing, loadProcessedTxHashes, markTxProcessed } from './conversationState.js';
 import { extractIPFSUrl, validateImageUrl } from './ipfsUtils.js';
 import { ScannedMessage } from './types.js';
 
 const POLL_INTERVAL_MS = parseInt(process.env.POLL_INTERVAL_MS ?? '10000', 10);
-const COST_PFT = 500;
+const COST_PFT = 350;
 const BOT_ADDRESS = 'rLethbCWSbYS6aeUyZRZAJHh4Hw3QNQf9w';
 
 // Track in-flight animations so we don't double-process a user
 const processingAddresses = new Set<string>();
 
-// In-memory dedup for extra safety within a single session
-const processedTxHashes = new Set<string>();
+// Persisted dedup — survives restarts
+const processedTxHashes = loadProcessedTxHashes();
 
 // ── Message processor ──────────────────────────────────────────────────────────
 
@@ -23,7 +23,6 @@ async function processMessage(msg: ScannedMessage): Promise<void> {
   const amountPft = parseFloat(msg.amount_pft ?? '0');
 
   if (processedTxHashes.has(tx_hash)) return;
-  processedTxHashes.add(tx_hash);
   const state = getState(sender);
   if (state.lastTx === tx_hash) return;
 
@@ -35,11 +34,49 @@ async function processMessage(msg: ScannedMessage): Promise<void> {
     return;
   }
 
+  // Mark processed only after successful decrypt — transient errors won't permanently bury the tx
+  markTxProcessed(tx_hash, processedTxHashes);
+
   const text = full.message?.trim() ?? '';
   console.log(`[Bot] Message from ${sender} | ${amountPft} PFT | state=${state.status} | "${text.slice(0, 80)}"`);
 
   // ── State: NEW (first contact) ─────────────────────────────────────────────
   if (state.status === 'NEW') {
+    const isAnimateCommand = text.toLowerCase().startsWith('/animate');
+
+    if (isAnimateCommand && amountPft >= COST_PFT) {
+      // User paid and issued /animate in their very first message — skip straight to AWAITING_IPFS
+      await sendMessage({
+        recipient: sender,
+        reply_to_tx: tx_hash,
+        thread_id: full.thread_id,
+        message:
+          `👋 Welcome to PFT NFT Animator!\n\n` +
+          `✅ Payment of **${amountPft} PFT** received!\n\n` +
+          `Now submit your NFT image URL:\n` +
+          `Copy your NFT's IPFS URL and paste it after the command:\n` +
+          `\`/uploadipfslink https://ipfs-testnet.postfiat.org/ipfs/YourCID\``,
+      });
+      setState(sender, { status: 'AWAITING_IPFS', lastTx: tx_hash });
+      return;
+    }
+
+    if (isAnimateCommand && amountPft < COST_PFT) {
+      // Sent /animate but forgot the PFT
+      await sendMessage({
+        recipient: sender,
+        reply_to_tx: tx_hash,
+        thread_id: full.thread_id,
+        message:
+          `👋 Welcome to PFT NFT Animator!\n\n` +
+          `You sent \`/animate\` but only attached **${amountPft} PFT**. The cost is **350 PFT**.\n\n` +
+          `Please resend \`/animate\` with **350 PFT** attached to get started.`,
+      });
+      setState(sender, { status: 'AWAITING', lastTx: tx_hash });
+      return;
+    }
+
+    // Generic first contact — send welcome instructions
     await sendMessage({
       recipient: sender,
       reply_to_tx: tx_hash,
@@ -48,16 +85,16 @@ async function processMessage(msg: ScannedMessage): Promise<void> {
         `👋 Welcome to PFT NFT Animator!\n\n` +
         `Your NFT will be brought to life as a unique 5-second animation.\n\n` +
         `**How it works:**\n` +
-        `1. Send \`/animate\` with **500 PFT** attached to pay and initiate\n` +
-        `2. Reply with \`/uploadipfslink <your-ipfs-url>\` to submit your NFT image\n` +
+        `1. Send \`/animate\` with **350 PFT** attached to pay and initiate\n` +
+        `2. Reply with \`/uploadipfslink\` followed by your NFT's IPFS URL to submit your image\n` +
         `3. Receive your animation in ~60–90 seconds\n\n` +
-        `When you're ready, send \`/animate\` with 500 PFT to get started.`,
+        `When you're ready, send \`/animate\` with 350 PFT to get started.`,
     });
     setState(sender, { status: 'AWAITING', lastTx: tx_hash });
     return;
   }
 
-  // ── State: AWAITING (waiting for /animate + 500 PFT) ────────────────────
+  // ── State: AWAITING (waiting for /animate + 350 PFT) ────────────────────
   if (state.status === 'AWAITING') {
     const isAnimateCommand = text.toLowerCase().startsWith('/animate');
 
@@ -67,7 +104,7 @@ async function processMessage(msg: ScannedMessage): Promise<void> {
         reply_to_tx: tx_hash,
         thread_id: full.thread_id,
         message:
-          `To get started, send \`/animate\` with **500 PFT** attached to the message.`,
+          `To get started, send \`/animate\` with **350 PFT** attached to the message.`,
       });
       setState(sender, { status: 'AWAITING', lastTx: tx_hash });
       return;
@@ -80,7 +117,7 @@ async function processMessage(msg: ScannedMessage): Promise<void> {
         thread_id: full.thread_id,
         message:
           `You sent \`/animate\` but only attached **${amountPft} PFT**.\n\n` +
-          `Please resend \`/animate\` with **500 PFT** attached.`,
+          `Please resend \`/animate\` with **350 PFT** attached.`,
       });
       setState(sender, { status: 'AWAITING', lastTx: tx_hash });
       return;
@@ -96,7 +133,7 @@ async function processMessage(msg: ScannedMessage): Promise<void> {
         `Reply with:\n` +
         `\`/uploadipfslink <your-ipfs-url>\`\n\n` +
         `Example:\n` +
-        `\`/uploadipfslink ipfs://QmYourCIDHere\``,
+        `\`/uploadipfslink https://ipfs-testnet.postfiat.org/ipfs/YourCID\``,
     });
     setState(sender, { status: 'AWAITING_IPFS', lastTx: tx_hash });
     return;
@@ -113,7 +150,7 @@ async function processMessage(msg: ScannedMessage): Promise<void> {
         thread_id: full.thread_id,
         message:
           `Payment already received! Submit your NFT image URL with:\n\n` +
-          `\`/uploadipfslink <your-ipfs-url>\``,
+          `\`/uploadipfslink https://ipfs-testnet.postfiat.org/ipfs/YourCID\``,
       });
       setState(sender, { status: 'AWAITING_IPFS', lastTx: tx_hash });
       return;
@@ -130,7 +167,7 @@ async function processMessage(msg: ScannedMessage): Promise<void> {
         message:
           `I couldn't find a valid IPFS URL in your message.\n\n` +
           `Please try again:\n` +
-          `\`/uploadipfslink ipfs://QmYourCIDHere\``,
+          `\`/uploadipfslink https://ipfs-testnet.postfiat.org/ipfs/YourCID\``,
       });
       setState(sender, { status: 'AWAITING_IPFS', lastTx: tx_hash });
       return;
@@ -147,7 +184,7 @@ async function processMessage(msg: ScannedMessage): Promise<void> {
         message:
           `I couldn't load an image from that URL (${validation.error}).\n\n` +
           `Please check the link and try again with:\n` +
-          `\`/uploadipfslink <your-ipfs-url>\``,
+          `\`/uploadipfslink https://ipfs-testnet.postfiat.org/ipfs/YourCID\``,
       });
       setState(sender, { status: 'AWAITING_IPFS', lastTx: tx_hash });
       return;
@@ -173,8 +210,8 @@ async function processMessage(msg: ScannedMessage): Promise<void> {
         thread_id: full.thread_id,
         message:
           `❌ Something went wrong generating your animation: ${err.message}\n\n` +
-          `Your 500 PFT was received. Please try submitting your link again:\n` +
-          `\`/uploadipfslink <your-ipfs-url>\``,
+          `Your 350 PFT was received. Please try submitting your link again:\n` +
+          `\`/uploadipfslink https://ipfs-testnet.postfiat.org/ipfs/YourCID\``,
       }).catch(console.error);
       setState(sender, { status: 'AWAITING_IPFS', lastTx: tx_hash });
     });
@@ -190,13 +227,44 @@ async function processMessage(msg: ScannedMessage): Promise<void> {
 
   // ── State: COMPLETED ──────────────────────────────────────────────────────
   if (state.status === 'COMPLETED') {
+    const isAnimateCommand = text.toLowerCase().startsWith('/animate');
+
+    if (isAnimateCommand && amountPft >= COST_PFT) {
+      // User paid to start a new animation — skip straight to AWAITING_IPFS
+      await sendMessage({
+        recipient: sender,
+        reply_to_tx: tx_hash,
+        thread_id: full.thread_id,
+        message:
+          `✅ Payment of **${amountPft} PFT** received! Ready for your next NFT.\n\n` +
+          `Copy your NFT's IPFS URL and paste it after the command:\n` +
+          `\`/uploadipfslink https://ipfs-testnet.postfiat.org/ipfs/YourCID\``,
+      });
+      setState(sender, { status: 'AWAITING_IPFS', lastTx: tx_hash });
+      return;
+    }
+
+    if (isAnimateCommand && amountPft < COST_PFT) {
+      await sendMessage({
+        recipient: sender,
+        reply_to_tx: tx_hash,
+        thread_id: full.thread_id,
+        message:
+          `You sent \`/animate\` but only attached **${amountPft} PFT**. The cost is **350 PFT**.\n\n` +
+          `Please resend \`/animate\` with **350 PFT** attached.`,
+      });
+      setState(sender, { status: 'AWAITING', lastTx: tx_hash });
+      return;
+    }
+
+    // Any other message — remind them how to start again
     await sendMessage({
       recipient: sender,
       reply_to_tx: tx_hash,
       thread_id: full.thread_id,
       message:
         `Your animation was already delivered! 🎬\n\n` +
-        `Want to animate another NFT? Send \`/animate\` with 500 PFT to start again.`,
+        `Want to animate another NFT? Send \`/animate\` with 350 PFT to start again.`,
     });
     setState(sender, { status: 'AWAITING', lastTx: tx_hash });
   }
@@ -252,7 +320,7 @@ async function runAnimation(
       console.log(`[Bot] Uploaded to IPFS: ${uploaded.cid}`);
     } else {
       // Video too large for IPFS — send the direct URL
-      deliveryText = `Your animation is ready! [Click here to view/download your animation](${videoUrl})\n\n_(Link expires in ~24 hours — download it soon)_`;
+      deliveryText = `Your animation is ready! Copy and paste the link below into your browser to view and download:\n\n${videoUrl}\n\n_(Link expires in ~24 hours — download it soon)_`;
     }
 
     // Step 4: deliver to user
@@ -262,8 +330,9 @@ async function runAnimation(
       message:
         `🎬 **Your NFT animation is ready!**\n\n` +
         deliveryText +
+        `\n\n_(If the URL appears incomplete, refresh this page and it should load correctly.)_` +
         `\n\n**Animation prompt used:**\n_${prompt}_\n\n` +
-        `Want to animate another NFT? Reply with a new IPFS URL and 500 PFT.`,
+        `Want to animate another NFT? Reply with a new IPFS URL and 350 PFT.`,
       ...(attachments ? { attachments } : {}),
     });
 

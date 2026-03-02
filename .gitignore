@@ -4,5 +4,6 @@ dist/
 state.json
 cursor.json
 seen_txs.json
+processed_txs.json
 .keystone-api-key
 *.log

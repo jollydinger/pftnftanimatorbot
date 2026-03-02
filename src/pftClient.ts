@@ -96,7 +96,7 @@ export async function sendMessage(params: {
 export async function registerBot(): Promise<void> {
   await callTool('register_bot', {
     name: 'PFT NFT Animator',
-    description: 'Animates your PFT NFT into a contextual full-motion video. Send your NFT\'s IPFS image URL with 500 PFT and receive a custom animation based on your NFT\'s contents.',
+    description: 'Animates your PFT NFT into a contextual full-motion video. Send your NFT\'s IPFS image URL with 350 PFT and receive a custom animation based on your NFT\'s contents.',
     capabilities: ['image-to-video', 'nft-animation', 'ipfs', 'ai-generation'],
     icon_emoji: '🎬',
     icon_color_hex: '8B5CF6',
@@ -105,12 +105,12 @@ export async function registerBot(): Promise<void> {
       {
         command: '/animate',
         example: '/animate',
-        description: 'Initiate an NFT animation. Attach 500 PFT to this message to pay and begin.',
-        min_cost_drops: '500000000', // 500 PFT (1 PFT = 1,000,000 drops)
+        description: 'Initiate an NFT animation. Attach 350 PFT to this message to pay and begin.',
+        min_cost_drops: '350000000', // 350 PFT (1 PFT = 1,000,000 drops)
       },
       {
         command: '/uploadipfslink',
-        example: '/uploadipfslink ipfs://QmYourCIDHere',
+        example: '/uploadipfslink https://ipfs-testnet.postfiat.org/ipfs/YourCID',
         description: 'Submit your NFT IPFS image URL after paying with /animate.',
         min_cost_drops: '0',
       },
