@@ -320,7 +320,7 @@ async function runAnimation(
       console.log(`[Bot] Uploaded to IPFS: ${uploaded.cid}`);
     } else {
       // Video too large for IPFS — send the direct URL
-      deliveryText = `Your animation is ready! Copy and paste the link below into your browser to view and download:\n\n${videoUrl}\n\n_(Link expires in ~24 hours — download it soon)_`;
+      deliveryText = `Your animation is ready! Copy and paste the link below into your browser to view and download:\n\n${videoUrl}\n\n_(If the URL appears cut off, refresh this page — it will display in full. Link expires in ~24 hours so download it soon.)_`;
     }
 
     // Step 4: deliver to user
@@ -330,7 +330,6 @@ async function runAnimation(
       message:
         `🎬 **Your NFT animation is ready!**\n\n` +
         deliveryText +
-        `\n\n_(If the URL appears incomplete, refresh this page and it should load correctly.)_` +
         `\n\n**Animation prompt used:**\n_${prompt}_\n\n` +
         `Want to animate another NFT? Reply with a new IPFS URL and 350 PFT.`,
       ...(attachments ? { attachments } : {}),
