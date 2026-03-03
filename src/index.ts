@@ -320,7 +320,7 @@ async function runAnimation(
       console.log(`[Bot] Uploaded to IPFS: ${uploaded.cid}`);
     } else {
       // Video too large for IPFS — send the direct URL
-      deliveryText = `Your animation is ready! Copy and paste the link below into your browser to view and download:\n\n${videoUrl}\n\n_(If the URL appears cut off, refresh this page — it will display in full. Link expires in ~24 hours so download it soon.)_`;
+      deliveryText = `Your animation is ready!\n\nPFT messaging app truncates messages when first received. Refresh this browser tab and your video link will appear. Link expires in 24 hours so download soon.\n\nCopy and paste into your browser:\n\n${videoUrl}`;
     }
 
     // Step 4: deliver to user
